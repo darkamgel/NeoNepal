@@ -147,3 +147,38 @@ def test_compute_adhoc_risk_reflects_persisted_observations(db, monkeypatch):
     components = compute_adhoc_risk(db, glacier)
     assert components.terrain_change == 0.8
     assert components.lake_growth == 1.0  # saturated
+
+
+def test_compute_adhoc_risk_asof_only_sees_earlier_observations(db, monkeypatch):
+    # Same role `asof` plays in compute_risk (see test_high_risk_with_rapid_lake_growth...
+    # implicitly relying on it via seed_data's historical backfill) — this is
+    # what lets a glacier's real risk *history* be built by replaying this
+    # function across its past observation timestamps.
+    glacier = _make_glacier(db)
+    monkeypatch.setattr("app.risk.scoring.weather_ingestion.fetch_rainfall_anomaly", lambda *a, **k: 0.0)
+
+    now = dt.datetime.utcnow()
+    early = SatelliteObservation(
+        glacier_id=glacier.id,
+        observed_at=now - dt.timedelta(days=10),
+        surface_area_m2=50_000,
+        terrain_change_index=0.1,
+        source="demo",
+    )
+    late = SatelliteObservation(
+        glacier_id=glacier.id,
+        observed_at=now,
+        surface_area_m2=90_000,
+        terrain_change_index=0.9,
+        source="demo",
+    )
+    db.add_all([early, late])
+    db.commit()
+
+    as_of_early = compute_adhoc_risk(db, glacier, asof=early.observed_at)
+    as_of_now = compute_adhoc_risk(db, glacier, asof=now)
+
+    assert as_of_early.terrain_change == 0.1  # `late` observation not yet visible
+    assert as_of_early.lake_growth == 0.0  # only one observation visible so far
+    assert as_of_now.terrain_change == 0.9
+    assert as_of_now.lake_growth == 1.0  # saturated 80% growth

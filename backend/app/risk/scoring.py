@@ -18,7 +18,13 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from ..ingestion import weather as weather_ingestion
-from ..models import Glacier, SatelliteObservation, SensorReading, Watershed
+from ..models import (
+    Glacier,
+    SatelliteObservation,
+    SensorReading,
+    Watershed,
+    satellite_observation_owner_filter,
+)
 
 WEIGHTS = {
     "terrain_change": 0.30,
@@ -78,14 +84,12 @@ class RiskComponents:
 def _lake_growth_component(
     db: Session, asof: dt.datetime, *, lake_id: int | None = None, glacier_id: int | None = None
 ) -> float:
-    filt = (
-        SatelliteObservation.lake_id == lake_id
-        if lake_id is not None
-        else SatelliteObservation.glacier_id == glacier_id
-    )
     obs = (
         db.query(SatelliteObservation)
-        .filter(filt, SatelliteObservation.observed_at <= asof)
+        .filter(
+            satellite_observation_owner_filter(lake_id, glacier_id),
+            SatelliteObservation.observed_at <= asof,
+        )
         .order_by(SatelliteObservation.observed_at.desc())
         .limit(_LOOKBACK_OBSERVATIONS)
         .all()
@@ -102,14 +106,12 @@ def _lake_growth_component(
 def _terrain_change_component(
     db: Session, asof: dt.datetime, *, lake_id: int | None = None, glacier_id: int | None = None
 ) -> float:
-    filt = (
-        SatelliteObservation.lake_id == lake_id
-        if lake_id is not None
-        else SatelliteObservation.glacier_id == glacier_id
-    )
     latest = (
         db.query(SatelliteObservation)
-        .filter(filt, SatelliteObservation.observed_at <= asof)
+        .filter(
+            satellite_observation_owner_filter(lake_id, glacier_id),
+            SatelliteObservation.observed_at <= asof,
+        )
         .order_by(SatelliteObservation.observed_at.desc())
         .first()
     )
@@ -160,7 +162,9 @@ def compute_risk(
     )
 
 
-def compute_adhoc_risk(db: Session, glacier: Glacier) -> RiskComponents:
+def compute_adhoc_risk(
+    db: Session, glacier: Glacier, asof: dt.datetime | None = None
+) -> RiskComponents:
     """On-demand risk score for any glacier in the full OSM inventory, not
     just the 7 curated watersheds. No ground sensor exists at an arbitrary
     location, so `sensor_available=False` and the score formula renormalizes
@@ -169,8 +173,14 @@ def compute_adhoc_risk(db: Session, glacier: Glacier) -> RiskComponents:
     honest "no signal yet" defaults on a glacier's first-ever analysis and
     become real comparisons on repeat calls, since each call persists its
     observation (see ingestion/satellite.py).
+
+    `asof` restricts every component to data at or before that timestamp —
+    same role it plays in compute_risk — which is what lets a glacier's
+    real risk *history* be built by replaying this function across its
+    past observation timestamps rather than needing a separately persisted
+    score table (see GET /glaciers/{id}/risk-history).
     """
-    asof = dt.datetime.utcnow()
+    asof = asof or dt.datetime.utcnow()
     terrain = _terrain_change_component(db, asof, glacier_id=glacier.id)
     growth = _lake_growth_component(db, asof, glacier_id=glacier.id)
     rainfall = weather_ingestion.fetch_rainfall_anomaly(glacier.lat, glacier.lon, asof=asof)

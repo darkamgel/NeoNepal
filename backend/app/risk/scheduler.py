@@ -7,6 +7,7 @@ import logging
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy.orm import Session
 
+from .. import scheduler_lock
 from ..alerts.dispatch import maybe_dispatch_alert
 from ..db import SessionLocal
 from ..ingestion import satellite as satellite_ingestion
@@ -60,15 +61,22 @@ _scheduler = BackgroundScheduler()
 
 
 def start_scheduler():
-    if not _scheduler.running:
-        _scheduler.add_job(
-            _scheduled_job,
-            "interval",
-            seconds=RECOMPUTE_INTERVAL_SECONDS,
-            id="risk_recompute",
-            replace_existing=True,
+    if _scheduler.running:
+        return
+    if not scheduler_lock.acquire():
+        logger.info(
+            "Scheduler lock held by another process on this machine — skipping automatic "
+            "risk recompute here. The API and manual /cycle/run trigger are unaffected."
         )
-        _scheduler.start()
+        return
+    _scheduler.add_job(
+        _scheduled_job,
+        "interval",
+        seconds=RECOMPUTE_INTERVAL_SECONDS,
+        id="risk_recompute",
+        replace_existing=True,
+    )
+    _scheduler.start()
 
 
 def stop_scheduler():

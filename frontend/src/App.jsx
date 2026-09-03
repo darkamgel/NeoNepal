@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { api } from "./api/client";
+import { useWatchList } from "./hooks/useWatchList";
 import AlertLog from "./components/AlertLog";
 import CaseStudy from "./components/CaseStudy";
 import GlacierDirectory from "./components/GlacierDirectory";
 import GlacierSearch from "./components/GlacierSearch";
 import MapView from "./components/MapView";
+import TrackedGlaciers from "./components/TrackedGlaciers";
 import WatershedDetail from "./components/WatershedDetail";
 
 export default function App() {
+  const watchList = useWatchList();
   const [watersheds, setWatersheds] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -87,14 +90,21 @@ export default function App() {
           <button className={tab === "glaciers" ? "active" : ""} onClick={() => setTab("glaciers")}>
             Glacier Directory
           </button>
+          <button className={tab === "tracked" ? "active" : ""} onClick={() => setTab("tracked")}>
+            Tracked Glaciers
+          </button>
         </nav>
       </header>
 
       {error && <div className="error-banner">Error: {error}</div>}
 
-      {tab === "glaciers" ? (
+      {tab === "tracked" ? (
         <main className="glacier-directory-layout">
-          <GlacierDirectory />
+          <TrackedGlaciers watchList={watchList} />
+        </main>
+      ) : tab === "glaciers" ? (
+        <main className="glacier-directory-layout">
+          <GlacierDirectory watchList={watchList} />
         </main>
       ) : tab === "dashboard" ? (
         <main className="dashboard-layout">

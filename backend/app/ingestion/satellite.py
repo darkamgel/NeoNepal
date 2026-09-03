@@ -35,7 +35,11 @@ from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 from sqlalchemy.orm import Session
 
-from ..models import SatelliteObservation
+from ..models import (
+    SatelliteObservation,
+    satellite_observation_owner_filter as _owner_filter,
+    satellite_observation_owner_kwargs as _owner_kwargs,
+)
 
 logger = logging.getLogger("neonepal.ingestion.satellite")
 
@@ -47,17 +51,6 @@ _COLLECTION = "sentinel-2-l2a"
 _SEARCH_LOOKBACK_DAYS = 30
 _BBOX_BUFFER_DEG = 0.02  # ~2km
 _WATER_NDWI_THRESHOLD = 0.1
-
-
-def _owner_kwargs(lake_id: int | None, glacier_id: int | None) -> dict:
-    assert (lake_id is None) != (glacier_id is None), "exactly one of lake_id/glacier_id required"
-    return {"lake_id": lake_id} if lake_id is not None else {"glacier_id": glacier_id}
-
-
-def _owner_filter(lake_id: int | None, glacier_id: int | None):
-    if lake_id is not None:
-        return SatelliteObservation.lake_id == lake_id
-    return SatelliteObservation.glacier_id == glacier_id
 
 
 def _demo_next_observation(

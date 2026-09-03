@@ -1,6 +1,6 @@
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -8,9 +8,17 @@ from .. import schemas
 from ..db import get_db
 from ..ingestion import satellite as satellite_ingestion
 from ..models import Glacier, SatelliteObservation
+from ..rate_limit import RateLimiter
 from ..risk.scoring import compute_adhoc_risk
+from .deps import get_or_404
 
 router = APIRouter(prefix="/glaciers", tags=["glaciers"])
+
+# One real satellite + weather fetch per call. Looser than /cycle/run since
+# it targets a single glacier rather than iterating all watersheds, but
+# still bounded — the directory has ~3,300 glaciers and nothing should be
+# able to script through all of them quickly.
+_analyze_rate_limiter = RateLimiter(max_calls=5, window_seconds=60)
 
 
 @router.get("/search", response_model=list[schemas.GlacierOut])
@@ -48,13 +56,14 @@ def glacier_stats(db: Session = Depends(get_db)):
 
 @router.get("/{glacier_id}", response_model=schemas.GlacierDetailOut)
 def get_glacier(glacier_id: int, db: Session = Depends(get_db)):
-    glacier = db.query(Glacier).filter(Glacier.id == glacier_id).first()
-    if not glacier:
-        raise HTTPException(status_code=404, detail="Glacier not found")
-    return glacier
+    return get_or_404(db, Glacier, glacier_id, "Glacier not found")
 
 
-@router.post("/{glacier_id}/analyze", response_model=schemas.GlacierRiskOut)
+@router.post(
+    "/{glacier_id}/analyze",
+    response_model=schemas.GlacierRiskOut,
+    dependencies=[Depends(_analyze_rate_limiter)],
+)
 def analyze_glacier(glacier_id: int, db: Session = Depends(get_db)):
     """On-demand risk analysis for any glacier — real satellite/weather
     fetch, so this does real work (a few seconds), not an instant lookup.
@@ -62,9 +71,7 @@ def analyze_glacier(glacier_id: int, db: Session = Depends(get_db)):
     glacier produces a real terrain-change comparison instead of the
     "no prior observation" default.
     """
-    glacier = db.query(Glacier).filter(Glacier.id == glacier_id).first()
-    if not glacier:
-        raise HTTPException(status_code=404, detail="Glacier not found")
+    glacier = get_or_404(db, Glacier, glacier_id, "Glacier not found")
 
     satellite_ingestion.ingest_latest(db, glacier.lat, glacier.lon, glacier_id=glacier.id)
     components = compute_adhoc_risk(db, glacier)
@@ -83,6 +90,41 @@ def analyze_glacier(glacier_id: int, db: Session = Depends(get_db)):
         observation_count=observation_count,
         computed_at=dt.datetime.utcnow(),
     )
+
+
+@router.get("/{glacier_id}/risk-history", response_model=list[schemas.GlacierRiskHistoryPointOut])
+def get_glacier_risk_history(glacier_id: int, db: Session = Depends(get_db)):
+    """A glacier's real risk history, built by replaying compute_adhoc_risk
+    at each of its past observation timestamps (see that function's
+    docstring) — not a separately persisted score table. Read-only against
+    Planetary Computer (no new satellite fetch); real historical rainfall
+    is still fetched per point via the existing Open-Meteo archive path,
+    naturally bounded since observation count is gated by how many times
+    "Analyze risk" has been clicked for this glacier (already rate-limited).
+    """
+    glacier = get_or_404(db, Glacier, glacier_id, "Glacier not found")
+
+    observations = (
+        db.query(SatelliteObservation)
+        .filter(SatelliteObservation.glacier_id == glacier.id)
+        .order_by(SatelliteObservation.observed_at.asc())
+        .all()
+    )
+
+    points = []
+    for obs in observations:
+        components = compute_adhoc_risk(db, glacier, asof=obs.observed_at)
+        points.append(
+            schemas.GlacierRiskHistoryPointOut(
+                computed_at=obs.observed_at,
+                score=components.score,
+                level=components.level,
+                terrain_change_component=components.terrain_change,
+                lake_growth_component=components.lake_growth,
+                rainfall_component=components.rainfall,
+            )
+        )
+    return points
 
 
 @router.get("", response_model=list[schemas.GlacierOut])

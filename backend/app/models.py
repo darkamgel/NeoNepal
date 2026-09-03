@@ -77,6 +77,27 @@ class SatelliteObservation(Base):
     glacier = relationship("Glacier", back_populates="observations")
 
 
+def satellite_observation_owner_filter(lake_id: int | None, glacier_id: int | None):
+    """Query filter for 'the SatelliteObservation rows belonging to this
+    lake, or this glacier' — exactly one of the two is ever passed. Shared
+    by ingestion/satellite.py (writing observations) and risk/scoring.py
+    (reading them back), which both need the same lake_id/glacier_id
+    branching and previously duplicated it independently.
+    """
+    assert (lake_id is None) != (glacier_id is None), "exactly one of lake_id/glacier_id required"
+    if lake_id is not None:
+        return SatelliteObservation.lake_id == lake_id
+    return SatelliteObservation.glacier_id == glacier_id
+
+
+def satellite_observation_owner_kwargs(lake_id: int | None, glacier_id: int | None) -> dict:
+    """The constructor kwargs matching satellite_observation_owner_filter,
+    for creating a new row attached to the same owner.
+    """
+    assert (lake_id is None) != (glacier_id is None), "exactly one of lake_id/glacier_id required"
+    return {"lake_id": lake_id} if lake_id is not None else {"glacier_id": glacier_id}
+
+
 class Glacier(Base):
     """A glacier from OpenStreetMap's Nepal inventory — the full searchable
     set. Distinct from GlacialLake, which is the small, actively risk-scored

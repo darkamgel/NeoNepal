@@ -15,7 +15,7 @@ function formatDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export default function RiskChart({ riskHistory, eventDate, eventLabel }) {
+export default function RiskChart({ riskHistory, eventDate, eventLabel, showSensor = true }) {
   const data = riskHistory.map((r) => ({
     date: r.computed_at,
     label: formatDate(r.computed_at),
@@ -48,7 +48,9 @@ export default function RiskChart({ riskHistory, eventDate, eventLabel }) {
         <Line type="monotone" dataKey="score" name="Composite risk score" stroke="#1a5fb4" strokeWidth={2.5} dot={false} />
         <Line type="monotone" dataKey="terrain" name="Terrain change" stroke="#8a5cf5" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
         <Line type="monotone" dataKey="rainfall" name="Rainfall anomaly" stroke="#2e9bd6" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-        <Line type="monotone" dataKey="sensor" name="Sensor signal" stroke="#e08a2b" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+        {showSensor && (
+          <Line type="monotone" dataKey="sensor" name="Sensor signal" stroke="#e08a2b" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+        )}
       </LineChart>
     </ResponsiveContainer>
   );

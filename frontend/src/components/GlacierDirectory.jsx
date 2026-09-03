@@ -5,7 +5,7 @@ import TopGlaciersChart from "./TopGlaciersChart";
 
 const PAGE_SIZE = 25;
 
-export default function GlacierDirectory() {
+export default function GlacierDirectory({ watchList }) {
   const [stats, setStats] = useState(null);
   const [glaciers, setGlaciers] = useState([]);
   const [sort, setSort] = useState("area_desc");
@@ -111,7 +111,11 @@ export default function GlacierDirectory() {
         </table>
 
         {selectedId && (
-          <GlacierDetailPanel glacierId={selectedId} onClose={() => setSelectedId(null)} />
+          <GlacierDetailPanel
+            glacierId={selectedId}
+            onClose={() => setSelectedId(null)}
+            watchList={watchList}
+          />
         )}
       </div>
 

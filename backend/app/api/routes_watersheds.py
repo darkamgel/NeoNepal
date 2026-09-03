@@ -1,11 +1,12 @@
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import schemas
 from ..db import get_db
 from ..models import RiskScore, SatelliteObservation, SensorReading, Watershed
+from .deps import get_or_404
 
 router = APIRouter(prefix="/watersheds", tags=["watersheds"])
 
@@ -32,9 +33,7 @@ def list_watersheds(db: Session = Depends(get_db)):
 
 @router.get("/{watershed_id}", response_model=schemas.WatershedWithRiskOut)
 def get_watershed(watershed_id: int, db: Session = Depends(get_db)):
-    w = db.query(Watershed).filter(Watershed.id == watershed_id).first()
-    if not w:
-        raise HTTPException(status_code=404, detail="Watershed not found")
+    w = get_or_404(db, Watershed, watershed_id, "Watershed not found")
     item = schemas.WatershedWithRiskOut.model_validate(w)
     item.latest_risk = _latest_risk(db, w.id)
     return item
@@ -54,9 +53,7 @@ def get_risk_history(watershed_id: int, limit: int = 100, db: Session = Depends(
 
 @router.get("/{watershed_id}/observations", response_model=list[schemas.SatelliteObservationOut])
 def get_observations(watershed_id: int, db: Session = Depends(get_db)):
-    w = db.query(Watershed).filter(Watershed.id == watershed_id).first()
-    if not w:
-        raise HTTPException(status_code=404, detail="Watershed not found")
+    w = get_or_404(db, Watershed, watershed_id, "Watershed not found")
     lake_ids = [lake.id for lake in w.lakes]
     return (
         db.query(SatelliteObservation)
@@ -82,9 +79,7 @@ def post_sensor_reading(
     watershed_id: int, reading: schemas.SensorReadingIn, db: Session = Depends(get_db)
 ):
     """Manual ingestion endpoint — demos the path a real LoRaWAN gateway would use."""
-    w = db.query(Watershed).filter(Watershed.id == watershed_id).first()
-    if not w:
-        raise HTTPException(status_code=404, detail="Watershed not found")
+    get_or_404(db, Watershed, watershed_id, "Watershed not found")
 
     record = SensorReading(
         watershed_id=watershed_id,

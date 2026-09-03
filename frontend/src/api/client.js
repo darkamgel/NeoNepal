@@ -6,7 +6,10 @@ async function request(path, options) {
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`${options?.method || "GET"} ${path} failed: ${res.status}`);
+    // Surface the API's own detail message (e.g. rate-limit "try again in
+    // ~Ns") rather than just the status code, when the body provides one.
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail || `${options?.method || "GET"} ${path} failed: ${res.status}`);
   }
   return res.json();
 }
@@ -32,4 +35,5 @@ export const api = {
   getGlacier: (id) => request(`/glaciers/${id}`),
   getGlacierStats: () => request("/glaciers/stats"),
   analyzeGlacier: (id) => request(`/glaciers/${id}/analyze`, { method: "POST" }),
+  getGlacierRiskHistory: (id) => request(`/glaciers/${id}/risk-history`),
 };

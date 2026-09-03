@@ -99,6 +99,23 @@ class GlacierRiskOut(BaseModel):
     computed_at: dt.datetime
 
 
+class GlacierRiskHistoryPointOut(BaseModel):
+    """Shaped to match RiskScoreOut's fields that RiskChart.jsx consumes,
+    so the same chart component works for both curated watersheds and
+    on-demand glaciers without a fork. sensor_component is always 0.0 here
+    — no ground sensor exists for an arbitrary glacier — the frontend hides
+    that line via RiskChart's `showSensor=false` rather than implying data.
+    """
+
+    computed_at: dt.datetime
+    score: float
+    level: str
+    terrain_change_component: float
+    lake_growth_component: float
+    rainfall_component: float
+    sensor_component: float = 0.0
+
+
 class AlertOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

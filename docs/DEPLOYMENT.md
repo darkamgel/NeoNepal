@@ -104,6 +104,20 @@ from the original prototype, but real limits remain:
 - Uptime matters for a life-safety system in a way it doesn't for a demo —
   budget for redundancy (multi-region or on-prem failover) before this
   carries real alerting responsibility.
+- **Move the scheduler out of the web-serving processes.** The prototype's
+  periodic risk recompute runs in-process (`risk/scheduler.py`), guarded by
+  a single-machine file lock (`scheduler_lock.py`) so it doesn't fire once
+  per worker process. That's a stopgap, not the real fix — production
+  should run it as its own worker/cron process (e.g. a separate `celery
+  beat`/cron entry calling the same `run_cycle` function), decoupled from
+  however many API-serving processes are running.
+- **Rate limiting needs a shared backend at real scale.** The prototype's
+  per-IP limiter on `/cycle/run` and `/glaciers/{id}/analyze`
+  (`rate_limit.py`) is in-memory and process-local — correct for a single
+  process, but the effective limit silently multiplies by worker count
+  under multiple processes, and doesn't stop a distributed abuser. Move to
+  a shared store (Redis, or an API gateway's built-in rate limiting) before
+  this is public-facing at scale.
 
 ## 6. Model validation
 

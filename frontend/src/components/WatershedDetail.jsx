@@ -1,4 +1,4 @@
-import { colorForLevel, RISK_LABELS } from "../riskLevels";
+import RiskBadge from "./RiskBadge";
 import RiskChart from "./RiskChart";
 
 export default function WatershedDetail({ watershed, riskHistory, onRunCycle, isRunningCycle }) {
@@ -13,10 +13,7 @@ export default function WatershedDetail({ watershed, riskHistory, onRunCycle, is
           <h2>{watershed.name}</h2>
           <p className="muted">{watershed.district}</p>
         </div>
-        <span className="risk-badge" style={{ background: colorForLevel(level) }}>
-          {RISK_LABELS[level]}
-          {watershed.latest_risk ? ` · ${watershed.latest_risk.score.toFixed(1)}/100` : ""}
-        </span>
+        <RiskBadge level={level} score={watershed.latest_risk?.score} />
       </div>
       <p>{watershed.description}</p>
 

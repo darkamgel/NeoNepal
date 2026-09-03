@@ -99,10 +99,36 @@ Directory's "Analyze risk" button (`GlacierDetailPanel.jsx`) instead calls
   different (and more honest) number than "sensor says 0."
 - Each analysis persists its satellite observation, so a second analysis
   of the same glacier — even days later — produces a real terrain-change
-  comparison instead of the "no prior observation" default. There's no
-  historical trend chart for these yet (unlike the curated watersheds'
-  `/risk-history`), since that would need the same accumulation the 7
-  curated watersheds already have.
+  comparison instead of the "no prior observation" default.
+
+## Watch list / tracked glaciers
+
+Closes the "no historical trend chart yet" gap above, without a new
+persisted score table:
+
+- `compute_adhoc_risk` gained an `asof` parameter, the same role it plays
+  in `compute_risk` (restrict every component to data at or before that
+  timestamp). `GET /glaciers/{id}/risk-history` fetches a glacier's
+  `SatelliteObservation` rows and replays `compute_adhoc_risk` at each
+  one's timestamp — a real history built entirely from data that was
+  already persisted by prior `/analyze` calls, the same asof-replay
+  technique already proven for the Rasuwa case study's historical
+  backfill (`seed_data.py`). No new backend state.
+- Which glaciers a viewer is tracking is a per-browser preference
+  (`frontend/src/hooks/useWatchList.js`, `localStorage`), not server
+  state — there's no user-account system anywhere in this app, and the
+  underlying risk history is already real, shared, server-side data keyed
+  by glacier id regardless of who's watching it. The hook is called once
+  in `App.jsx` and threaded down as a prop (matching this app's existing
+  state pattern — plain prop-drilling, no Context/Redux anywhere) rather
+  than called independently in multiple components, which would each get
+  their own out-of-sync copy of the tracked list within the same tab.
+- `frontend/src/hooks/useAnalyzeGlacier.js` extracts the "click to
+  analyze, show loading, show result" state that was previously inline in
+  `GlacierDetailPanel.jsx`, since `TrackedGlacierCard.jsx` needed the
+  identical behavior — pulled out ahead of the second use rather than
+  copy-pasting it, consistent with the redundancy cleanup elsewhere in
+  this codebase.
 
 ## Risk scoring (`backend/app/risk/scoring.py`)
 
@@ -125,6 +151,33 @@ implementation to keep in sync.
 across all watersheds, persists a `RiskScore` row, and calls
 `alerts/dispatch.py` when the level crosses `high`/`critical`. It's also
 exposed as `POST /cycle/run` for demoing without waiting on the interval.
+
+## Guarding the endpoints that do real external work
+
+`POST /cycle/run` and `POST /glaciers/{id}/analyze` both trigger real calls
+to Planetary Computer and Open-Meteo. Two protections exist specifically
+because those are free, keyless, shared services — abusing them doesn't
+just slow down one user, it risks this app's IP getting rate-limited or
+banned entirely:
+
+- **`rate_limit.py`** — a simple in-memory per-IP limiter (`/cycle/run`: 2
+  calls/30s, since it fans out across all watersheds; `/glaciers/{id}/analyze`:
+  5 calls/60s) applied as a FastAPI dependency on those two routes. It's
+  process-local, not shared across workers — see the file's docstring for
+  what that implies at real scale (the effective limit multiplies by
+  worker count; a production deployment needs a shared store like Redis).
+- **`scheduler_lock.py`** — a separate, related but distinct problem:
+  `scheduler.py`'s periodic job runs in-process via `APScheduler`. With a
+  single dev process this is invisible, but the normal way to scale a
+  FastAPI app (`gunicorn -w 4`) runs multiple worker processes, and each
+  would start its own scheduler — the "every 5 minutes" job would actually
+  fire N times in parallel. `scheduler_lock.acquire()` takes an exclusive
+  `flock` on a lock file at startup; only the first process to grab it
+  actually starts its scheduler, others log and skip (the API and manual
+  `/cycle/run` trigger work identically in every process regardless). This
+  is a single-machine stopgap — see docs/DEPLOYMENT.md for the real fix
+  (move the scheduler to one dedicated worker process, outside the
+  web-serving processes).
 
 ## Alerting (`backend/app/alerts/dispatch.py`)
 

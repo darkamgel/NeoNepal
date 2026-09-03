@@ -1,39 +1,26 @@
 import { useEffect, useState } from "react";
-import { GeoJSON, MapContainer, TileLayer } from "react-leaflet";
+import { GeoJSON, MapContainer } from "react-leaflet";
 import { api } from "../api/client";
-import { colorForLevel, RISK_LABELS } from "../riskLevels";
+import { useAnalyzeGlacier } from "../hooks/useAnalyzeGlacier";
+import OsmTileLayer from "./OsmTileLayer";
+import RiskBadge from "./RiskBadge";
 
-export default function GlacierDetailPanel({ glacierId, onClose }) {
+export default function GlacierDetailPanel({ glacierId, onClose, watchList }) {
   const [glacier, setGlacier] = useState(null);
   const [error, setError] = useState(null);
-  const [risk, setRisk] = useState(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analyzeError, setAnalyzeError] = useState(null);
+  const { risk, isAnalyzing, error: analyzeError, analyze } = useAnalyzeGlacier(glacierId);
 
   useEffect(() => {
     setGlacier(null);
     setError(null);
-    setRisk(null);
-    setAnalyzeError(null);
     api.getGlacier(glacierId).then(setGlacier).catch((e) => setError(e.message));
   }, [glacierId]);
-
-  async function handleAnalyze() {
-    setIsAnalyzing(true);
-    setAnalyzeError(null);
-    try {
-      setRisk(await api.analyzeGlacier(glacierId));
-    } catch (e) {
-      setAnalyzeError(e.message);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }
 
   if (error) return <div className="detail-panel">Error: {error}</div>;
   if (!glacier) return <div className="detail-panel">Loading...</div>;
 
   const geometry = glacier.geometry_geojson ? JSON.parse(glacier.geometry_geojson) : null;
+  const tracked = watchList?.isTracked(glacier.id);
 
   return (
     <div className="detail-panel">
@@ -74,10 +61,7 @@ export default function GlacierDetailPanel({ glacierId, onClose }) {
       {geometry ? (
         <div className="glacier-outline-map">
           <MapContainer center={[glacier.lat, glacier.lon]} zoom={12} style={{ height: "100%", width: "100%" }}>
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            <OsmTileLayer />
             <GeoJSON data={geometry} style={{ color: "#1a5fb4", weight: 2, fillOpacity: 0.25 }} />
           </MapContainer>
         </div>
@@ -88,14 +72,26 @@ export default function GlacierDetailPanel({ glacierId, onClose }) {
         </p>
       )}
 
+      {watchList && (
+        <button
+          className="secondary-button"
+          onClick={() => (tracked ? watchList.untrack(glacier.id) : watchList.track(glacier))}
+        >
+          {tracked ? "Untrack this glacier" : "Track this glacier"}
+        </button>
+      )}
+
       <div className="analyze-section">
-        <button className="primary-button" onClick={handleAnalyze} disabled={isAnalyzing}>
+        <button className="primary-button" onClick={analyze} disabled={isAnalyzing}>
           {isAnalyzing ? "Analyzing (real satellite + weather fetch)..." : "Analyze risk"}
         </button>
         <p className="muted small">
           Computes a real, on-demand score from live satellite imagery and weather for this exact
-          location — not one of the 7 continuously-monitored watersheds, so there's no historical
-          trend yet and no ground sensor coverage here.
+          location.{" "}
+          {tracked
+            ? "Tracked — see the Tracked Glaciers tab for its accumulated history."
+            : "Track this glacier to build a real history from repeated analyses."}{" "}
+          No ground sensor coverage at this location.
         </p>
 
         {analyzeError && <div className="error-banner">Error: {analyzeError}</div>}
@@ -103,9 +99,7 @@ export default function GlacierDetailPanel({ glacierId, onClose }) {
         {risk && (
           <div className="risk-result">
             <div className="detail-header">
-              <span className="risk-badge" style={{ background: colorForLevel(risk.level) }}>
-                {RISK_LABELS[risk.level]} · {risk.score.toFixed(1)}/100
-              </span>
+              <RiskBadge level={risk.level} score={risk.score} />
             </div>
             <dl className="glacier-attrs">
               <dt>Terrain change</dt>
