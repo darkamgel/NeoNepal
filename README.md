@@ -16,9 +16,10 @@ sensor readings are still simulated (no physical hardware deployed). You
 can also search all ~3,300 glaciers OpenStreetMap has tagged for Nepal, not
 just the actively risk-scored watersheds.
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it's built and
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how it's built,
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for what a real deployment
-requires beyond this prototype.
+requires beyond this prototype, and [`docs/screenshots/`](docs/screenshots/)
+for a captioned tour of the running app.
 
 ## Running it
 
