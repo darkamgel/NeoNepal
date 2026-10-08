@@ -25,6 +25,11 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Remove unwanted files
+        run: |
+          rm -f frontend/dist/README.md
+          touch frontend/dist/.nojekyll
+
       - name: Check build output
         run: ls -la frontend/dist/
 
@@ -34,3 +39,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: frontend/dist
           cname: trinetra.codes
+          enable_jekyll: false
